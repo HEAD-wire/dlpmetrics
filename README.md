@@ -27,11 +27,13 @@ This repository has 3 functions:
 - A grafana service (defined in docker compose and grafana dir)
   that should be able to query the postgres data source and display
   the youtube video and channel metrics effectively.
+  (No work is required on this service as it can be configured ex-post
+  facto)
 
 At the moment no logic has been defined to retrieve the metrics and the
 worker is in essence incomplete.
 The logic for fetching subscriptions and persisting them to the postgres
 database should be functional.
 
-Work is required to make this work.
+The metric scraper functionality is currently not implemented.
   
