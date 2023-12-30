@@ -1,0 +1,116 @@
+# docker-compose.yml
+version: "3.7"
+
+services:
+
+  db:
+    image: postgres:latest
+    restart: always
+    container_name: db
+#    expose:
+#      - 5432
+    ports:
+      - 5432:5432
+    environment:
+      - PYTHONUNBUFFERED=0
+      - CONTAINER_ROLE=Default-Queue-worker
+      - API_KEY=${API_KEY}
+      - CLIENT_SECRETS_FILE=${CLIENT_SECRETS_FILE}
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - database_data:/var/lib/postgresql/data
+
+#    networks:
+#      primary-network:
+#        ipv4_address: 172.10.0.2 # Static IP address for service in subnet
+#      - host-network
+
+
+  grafana:
+    build:
+      context: ./grafana
+    container_name: grafana
+    ports:
+      - 9000:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+  metrics:
+    build:
+      dockerfile: ./worker/Dockerfile
+      context: .
+    depends_on:
+      - db
+      - gluetun
+    restart: always
+#    volumes:
+#      - nfs_data:/mnt
+    environment:
+      - PYTHONUNBUFFERED=0
+      - CONTAINER_ROLE=VPN-Queue-worker
+      - DB_NAME=postgres
+      - DB_USERNAME=postgres
+      - DB_PASS=postgres
+      - DB_HOST=db
+    network_mode: "service:gluetun" # Uses Gluetun's network, external requests use VPN
+    labels:
+      ofelia.job-local.my-test-job.schedule: "@every 5s"
+      ofelia.job-local.my-test-job.command: "date"
+
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    hostname: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - 8888:8888/tcp # HTTP proxy
+      - 3000:3000/tcp # Grafana
+    #    volumes:
+    #      - /yourpath:/gluetun
+    environment:
+      # See https://github.com/qdm12/gluetun-wiki/tree/main/setup#setup
+      - VPN_SERVICE_PROVIDER=${VPN_SERVICE_PROVIDER}
+      - VPN_TYPE=${VPN_TYPE}
+      - SERVER_COUNTRIES=${SERVER_COUNTRIES}
+      - OPENVPN_USER=${OPENVPN_USER}
+      - OPENVPN_PASSWORD=${OPENVPN_PASSWORD}
+      # Wireguard:
+      # - WIREGUARD_PRIVATE_KEY=<REDACTED>
+      # - WIREGUARD_ADDRESSES=<REDACTED>
+      # Timezone for accurate log times
+#      - TZ=
+      # Server list updater
+      # See https://github.com/qdm12/gluetun-wiki/blob/main/setup/servers.md#update-the-vpn-servers-list
+#      - UPDATER_PERIOD=
+#      - SERVER_COUNTRIES=
+#      - SERVER_REGIONS=
+      - FIREWALL_OUTBOUND_SUBNETS=172.10.0.0/16 # Required for accessing subnet ips ??
+    depends_on:
+      - db
+    extra_hosts:
+      - "db:172.10.0.2" # Adds db now static ip to gluetun's /etc/hosts for name resolution instead of DNS
+    networks:
+      - "primary-network" # Gluetun needs to be on the same network as other services
+
+
+networks:
+  primary-network:
+    ipam:
+      config:
+        - subnet: 172.10.0.0/16 # Defined static subnet ip. Make sure other docker networks do not conflict or it will error.
+
+  host-network:
+    {}
+
+
+volumes:
+  database_data:
+    driver: local
+
+  grafana-data:
+      external: true
